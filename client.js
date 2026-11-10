@@ -7,6 +7,9 @@ window.__ModuleLoader__.load({
     /** Locale namespace owned by this bundle. */
     const NS = 'dsh.balance';
 
+    /** Same-origin channel used to fan a manual refresh out to other tabs/windows. */
+    const BALANCE_CHANNEL = 'dsh-balance-ui:account-balance:v1';
+
     /** Estimated DeepSeek CNY rates per one million tokens. */
     const RATES = {
       input: 2.0,
@@ -420,6 +423,16 @@ window.__ModuleLoader__.load({
       const alive = React.useRef(true);
       const busyRef = React.useRef(false);
       const freshTimer = React.useRef(0);
+      const channelRef = React.useRef(null);
+      const remoteStamp = React.useRef(0);
+
+      const flashFresh = React.useCallback(() => {
+        window.clearTimeout(freshTimer.current);
+        setFresh(true);
+        freshTimer.current = window.setTimeout(() => {
+          if (alive.current) setFresh(false);
+        }, 1500);
+      }, []);
 
       const load = React.useCallback(async (manual) => {
         if (typeof fetchBalance !== 'function' || busyRef.current) return;
@@ -431,11 +444,17 @@ window.__ModuleLoader__.load({
           setDetails(value);
           setFailed(false);
           if (manual) {
-            window.clearTimeout(freshTimer.current);
-            setFresh(true);
-            freshTimer.current = window.setTimeout(() => {
-              if (alive.current) setFresh(false);
-            }, 1500);
+            flashFresh();
+            if (value && value.status === 'ready' && channelRef.current) {
+              const at = Date.now();
+              remoteStamp.current = at;
+              channelRef.current.postMessage({
+                type: 'account-balance',
+                version: 1,
+                at,
+                details: value,
+              });
+            }
           }
         } catch (error) {
           if (alive.current) {
@@ -446,7 +465,7 @@ window.__ModuleLoader__.load({
           busyRef.current = false;
           if (alive.current) setBusy(false);
         }
-      }, [fetchBalance]);
+      }, [fetchBalance, flashFresh]);
 
       React.useEffect(() => {
         alive.current = true;
@@ -455,6 +474,36 @@ window.__ModuleLoader__.load({
           alive.current = false;
           window.clearTimeout(freshTimer.current);
         };
+      }, [load]);
+
+      React.useEffect(() => {
+        if (typeof BroadcastChannel === 'undefined') return undefined;
+        const channel = new BroadcastChannel(BALANCE_CHANNEL);
+        channelRef.current = channel;
+        const onMessage = (event) => {
+          const message = event.data;
+          if (!message || message.type !== 'account-balance' || message.version !== 1) return;
+          if (!Number.isFinite(message.at) || message.at <= remoteStamp.current) return;
+          if (!message.details || message.details.status !== 'ready') return;
+          remoteStamp.current = message.at;
+          setDetails(message.details);
+          setFailed(false);
+          flashFresh();
+        };
+        channel.addEventListener('message', onMessage);
+        return () => {
+          channel.removeEventListener('message', onMessage);
+          channel.close();
+          if (channelRef.current === channel) channelRef.current = null;
+        };
+      }, [flashFresh]);
+
+      React.useEffect(() => {
+        const onVisibility = () => {
+          if (document.visibilityState === 'visible') void load(false);
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+        return () => { document.removeEventListener('visibilitychange', onVisibility); };
       }, [load]);
 
       if (!wide) return null;
