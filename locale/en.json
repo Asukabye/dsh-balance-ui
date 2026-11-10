@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSH balance indicators",
+    "description": "Shows the current session's estimated spend below the composer and the DeepSeek account balance with refresh in the sidebar."
+  }
+}
