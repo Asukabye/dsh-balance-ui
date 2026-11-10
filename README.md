@@ -4,7 +4,7 @@
 
 ![DSH Balance UI 预览](docs/preview.png)
 
-> 界面预览使用示例数据。会话金额按内置单价估算，不代表 Platform 账单。
+> 界面预览（设计稿，示例数据）。会话金额按内置单价估算，不代表 Platform 账单。
 
 ## 功能
 
